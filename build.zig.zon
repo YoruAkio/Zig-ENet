@@ -9,9 +9,9 @@
         "build.zig.zon",
         "README.md",
         "LICENSE",
+        "docs",
         "src",
         "examples",
         "tools",
-        "enet",
     },
 }
