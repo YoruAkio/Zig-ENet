@@ -1,0 +1,17 @@
+.{
+    .fingerprint = 0xd0ce6e08c3c1f84f,
+    .name = .zigenet,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "README.md",
+        "LICENSE",
+        "src",
+        "examples",
+        "tools",
+        "enet",
+    },
+}
