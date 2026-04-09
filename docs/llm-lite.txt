@@ -1,0 +1,219 @@
+Zig ENet LLM Lite
+
+This file is a compact LLM-only context note.
+Use it for quick orientation.
+If you need detail, read docs/llm.txt next.
+
+
+1. Project
+
+Name:
+Zig ENet
+
+Purpose:
+A Zig-native ENet-style UDP networking library focused on Growtopia private server development.
+
+Language:
+Zig
+
+Important design goal:
+- Zig-first API, not a raw C binding
+
+
+2. Main Exports
+
+Read src/root.zig first.
+
+Main public items:
+- Address
+- Host
+- Peer
+- Event
+- Packet
+- HostConfig
+- ProtocolFlavor
+- constants
+- protocol
+- transport
+- wire
+- checksum
+- compression
+- compat
+
+
+3. Core Files
+
+- src/root.zig
+  package exports
+
+- src/config.zig
+  HostConfig, ProtocolFlavor, checksum/compression hooks
+
+- src/host.zig
+  main runtime engine, event loop, send/receive logic, reliability, handshake
+
+- src/protocol.zig
+  protocol helpers, fragment planning, connect parsing, throttle helpers
+
+- src/wire.zig
+  exact wire encoding and header parsing
+
+- src/constants.zig
+  flags, command ids, peer states, event types, limits
+
+- src/packet.zig
+  packet allocation and ownership
+
+- src/transport.zig
+  transport abstraction and mock transport
+
+
+4. Core Model
+
+Think in layers:
+- config
+- wire
+- protocol
+- host
+- transport
+
+Most behavioral questions are answered by src/host.zig plus src/wire.zig.
+
+
+5. Main API Flow
+
+Typical usage:
+1. create a transport
+2. create a Host
+3. connect or wait for packets
+4. call Host.service in a loop
+5. handle Event values
+6. send packets with Peer.send
+7. optionally call Host.flush
+
+Main Host methods:
+- init
+- withTransport
+- connect
+- service
+- flush
+- broadcast
+- deinit
+
+Main Peer methods:
+- send
+- disconnect
+- configureThrottle
+- setTimeout
+
+
+6. Packet Ownership
+
+Important:
+- Packet uses retain and release
+- queued sends retain packet references
+- Event.packet should be released by the caller
+- Peer is owned by Host
+
+Do not describe packet ownership loosely.
+
+
+7. Protocol Flavors
+
+Defined in src/config.zig:
+- vanilla
+- growtopia_client
+- growtopia_server
+
+Notes:
+- HostConfig defaults to growtopia_server
+- examples currently use vanilla for easier local testing
+- Growtopia-specific integrity behavior matters in growtopia_server mode
+
+
+8. Important Invariants
+
+- channel_limit is clamped
+- peer ids must stay within protocol_maximum_peer_id
+- packet size must not exceed maximum_packet_size
+- exact wire sizes come from src/wire.zig helpers, not @sizeOf
+- Host.flush sends acknowledgements, resends, then queued commands
+- Host.service advances protocol state as well as receiving packets
+
+
+9. If You Need Answers Fast
+
+Question:
+How does connect work?
+Read:
+- Host.connect in src/host.zig
+- handleConnect in src/host.zig
+- handleVerifyConnect in src/host.zig
+- parseConnect in src/protocol.zig
+
+Question:
+How is a command encoded?
+Read:
+- src/wire.zig
+- appendCommandPayload in src/host.zig
+
+Question:
+Why was a packet rejected?
+Read:
+- validateChecksum in src/host.zig
+- validateGrowtopiaIntegrity in src/host.zig
+- sequencing and dispatch logic in src/host.zig
+
+Question:
+How do checksums/compression work?
+Read:
+- src/config.zig
+- src/checksum.zig
+- src/compression.zig
+- compressFrame in src/host.zig
+- decompressDatagram in src/host.zig
+
+
+10. Minimal Example
+
+```zig
+const transport = try zigenet.transport.unix.UdpSocket.bind(allocator, null);
+var host = try zigenet.Host.withTransport(allocator, .{
+    .peer_limit = 1,
+    .channel_limit = 2,
+    .protocol_flavor = .vanilla,
+}, transport);
+defer host.deinit();
+
+const peer = try host.connect(
+    zigenet.Address.fromIpv4Octets(.{ 127, 0, 0, 1 }, 17091),
+    2,
+    0,
+);
+_ = peer;
+try host.flush();
+
+while (true) {
+    if (try host.service(16)) |event| {
+        if (event.type == .receive) {
+            defer event.packet.?.release();
+        }
+    }
+}
+```
+
+
+11. Guidance For LLMs
+
+- prefer current Zig source over assumptions from original ENet
+- mention ProtocolFlavor when behavior differs between vanilla and Growtopia paths
+- mention packet ownership when discussing Packet or Event.packet
+- use src/wire.zig for exact bytes, header shape, and sizes
+- use src/host.zig for handshake, reliability, resend, throttle, and dispatch behavior
+- if behavior seems surprising, check whether it is transport, wire, protocol, or host-layer logic
+
+
+12. Bottom Line
+
+This is a Zig-native ENet-style library for Growtopia private server networking.
+The best source of truth is the Zig implementation itself.
