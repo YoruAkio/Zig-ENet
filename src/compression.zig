@@ -388,11 +388,11 @@ const Engine = struct {
 
                 const total = self.symbols[subcontext_index].total;
                 if (result.count > 0) {
-                    try self.encodeRange(output, &out_index, &encode_low, &encode_range, self.symbols[subcontext_index].escapes + result.under, result.count, total);
+                    try encodeRange(output, &out_index, &encode_low, &encode_range, self.symbols[subcontext_index].escapes + result.under, result.count, total);
                     encoded = true;
                 } else {
                     if (self.symbols[subcontext_index].escapes > 0 and self.symbols[subcontext_index].escapes < total) {
-                        try self.encodeRange(output, &out_index, &encode_low, &encode_range, 0, self.symbols[subcontext_index].escapes, total);
+                        try encodeRange(output, &out_index, &encode_low, &encode_range, 0, self.symbols[subcontext_index].escapes, total);
                     }
                     self.symbols[subcontext_index].escapes +%= subcontext_escape_delta;
                     self.symbols[subcontext_index].total +%= subcontext_escape_delta;
@@ -409,7 +409,7 @@ const Engine = struct {
             if (!encoded) {
                 const result = try self.contextEncode(0, value, context_symbol_delta, context_symbol_minimum);
                 self.setParent(parent_target, result.symbol_index);
-                try self.encodeRange(output, &out_index, &encode_low, &encode_range, self.symbols[0].escapes + result.under, result.count, self.symbols[0].total);
+                try encodeRange(output, &out_index, &encode_low, &encode_range, self.symbols[0].escapes + result.under, result.count, self.symbols[0].total);
                 self.symbols[0].total +%= context_symbol_delta;
                 if (result.count > 0xFF - 2 * context_symbol_delta + context_symbol_minimum or self.symbols[0].total > range_coder_bottom - 0x100) {
                     self.contextRescale(0, context_symbol_minimum);
@@ -424,7 +424,7 @@ const Engine = struct {
             self.freeSymbolsIfNeeded();
         }
 
-        try self.flushRange(output, &out_index, &encode_low);
+        try flushRange(output, &out_index, &encode_low);
         return out_index;
     }
 
@@ -436,7 +436,7 @@ const Engine = struct {
         var out_index: usize = 0;
         var decode_low: u32 = 0;
         var decode_range: u32 = ~@as(u32, 0);
-        var decode_code = self.seedDecode(input, &in_index);
+        var decode_code = seedDecode(input, &in_index);
 
         while (true) {
             const patch_start = self.predicted;
@@ -457,9 +457,9 @@ const Engine = struct {
                     continue;
                 }
 
-                var code = self.readCode(decode_low, decode_code, &decode_range, total);
+                var code = readCode(decode_low, decode_code, &decode_range, total);
                 if (code < self.symbols[subcontext_index].escapes) {
-                    self.decodeRange(input, &in_index, &decode_low, &decode_code, &decode_range, 0, self.symbols[subcontext_index].escapes);
+                    decodeRange(input, &in_index, &decode_low, &decode_code, &decode_range, 0, self.symbols[subcontext_index].escapes);
                     subcontext_index = self.symbols[subcontext_index].parent;
                     continue;
                 }
@@ -468,7 +468,7 @@ const Engine = struct {
                 const result = self.tryDecodeContext(subcontext_index, code, subcontext_symbol_delta, 0) orelse return error.InvalidCompressedPacket;
                 decoded = result;
                 stop_context = subcontext_index;
-                self.decodeRange(input, &in_index, &decode_low, &decode_code, &decode_range, self.symbols[subcontext_index].escapes + result.under, result.count);
+                decodeRange(input, &in_index, &decode_low, &decode_code, &decode_range, self.symbols[subcontext_index].escapes + result.under, result.count);
                 self.symbols[subcontext_index].total +%= subcontext_symbol_delta;
                 if (result.count > 0xFF - 2 * subcontext_symbol_delta or self.symbols[subcontext_index].total > range_coder_bottom - 0x100) {
                     self.contextRescale(subcontext_index, 0);
@@ -478,16 +478,16 @@ const Engine = struct {
 
             if (decoded == null) {
                 const total = self.symbols[0].total;
-                var code = self.readCode(decode_low, decode_code, &decode_range, total);
+                var code = readCode(decode_low, decode_code, &decode_range, total);
                 if (code < self.symbols[0].escapes) {
-                    self.decodeRange(input, &in_index, &decode_low, &decode_code, &decode_range, 0, self.symbols[0].escapes);
+                    decodeRange(input, &in_index, &decode_low, &decode_code, &decode_range, 0, self.symbols[0].escapes);
                     break;
                 }
                 code -%= self.symbols[0].escapes;
                 const result = try self.decodeRoot(code, context_symbol_delta, context_symbol_minimum);
                 decoded = result;
                 stop_context = 0;
-                self.decodeRange(input, &in_index, &decode_low, &decode_code, &decode_range, self.symbols[0].escapes + result.under, result.count);
+                decodeRange(input, &in_index, &decode_low, &decode_code, &decode_range, self.symbols[0].escapes + result.under, result.count);
                 self.symbols[0].total +%= context_symbol_delta;
                 if (result.count > 0xFF - 2 * context_symbol_delta + context_symbol_minimum or self.symbols[0].total > range_coder_bottom - 0x100) {
                     self.contextRescale(0, context_symbol_minimum);
