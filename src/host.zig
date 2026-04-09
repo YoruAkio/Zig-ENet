@@ -126,7 +126,7 @@ pub const Peer = struct {
             packet,
             self.mtu,
             self.host.config.checksum_fn != null,
-            self.host.config.protocol_flavor,
+            self.host.config.using_new_packet,
             self.nextOutgoingUnreliableStart(channel_id),
             self.nextOutgoingReliableStart(channel_id),
         );
@@ -386,11 +386,11 @@ pub const Host = struct {
             var frame: std.ArrayList(u8) = .empty;
             defer frame.deinit(self.allocator);
 
-            const header_len = wire.headerLen(self.config.protocol_flavor, constants.header_flag_sent_time, self.config.checksum_fn != null);
+            const header_len = wire.headerLen(self.config.using_new_packet, constants.header_flag_sent_time, self.config.checksum_fn != null);
             try frame.resize(self.allocator, header_len);
 
             peer.outgoing_reliable_sequence_number +%= 1;
-            _ = try wire.encodeHeader(frame.items, self.config.protocol_flavor, .{
+            _ = try wire.encodeHeader(frame.items, self.config.using_new_packet, .{
                 .peer_id = peer.outgoing_peer_id,
                 .session_id = peer.outgoing_session_id,
                 .flags = constants.header_flag_sent_time,
@@ -472,9 +472,9 @@ pub const Host = struct {
         var frame: std.ArrayList(u8) = .empty;
         defer frame.deinit(self.allocator);
 
-        const header_len = wire.headerLen(self.config.protocol_flavor, constants.header_flag_sent_time, self.config.checksum_fn != null);
+        const header_len = wire.headerLen(self.config.using_new_packet, constants.header_flag_sent_time, self.config.checksum_fn != null);
         try frame.resize(self.allocator, header_len);
-        _ = try wire.encodeHeader(frame.items, self.config.protocol_flavor, .{
+        _ = try wire.encodeHeader(frame.items, self.config.using_new_packet, .{
             .peer_id = peer.outgoing_peer_id,
             .session_id = peer.outgoing_session_id,
             .flags = constants.header_flag_sent_time,
@@ -586,7 +586,7 @@ pub const Host = struct {
 
         try frame.resize(self.allocator, header_len + compressed_len);
         @memcpy(frame.items[header_len .. header_len + compressed_len], compressed[0..compressed_len]);
-        _ = try wire.encodeHeader(frame.items, self.config.protocol_flavor, .{
+        _ = try wire.encodeHeader(frame.items, self.config.using_new_packet, .{
             .peer_id = peer.outgoing_peer_id,
             .session_id = peer.outgoing_session_id,
             .flags = constants.header_flag_sent_time | constants.header_flag_compressed,
@@ -607,7 +607,7 @@ pub const Host = struct {
     }
 
     fn outgoingIntegrity(self: *Host, peer: *const Peer) ?[3]u16 {
-        if (self.config.protocol_flavor != .growtopia_server) return null;
+        if (!self.config.using_new_packet) return null;
         const port = if (self.config.address) |address| address.port else 0;
         return .{ port, port ^ peer.nonce, peer.nonce };
     }
@@ -617,7 +617,7 @@ pub const Host = struct {
         var scratch: std.ArrayList(u8) = .empty;
         defer scratch.deinit(self.allocator);
 
-        var header = try wire.parseHeader(working_datagram, self.config.protocol_flavor, self.config.checksum_fn != null);
+        var header = try wire.parseHeader(working_datagram, self.config.using_new_packet_for_server, self.config.checksum_fn != null);
         if (working_datagram.len < header.header_len + wire.protocol_command_header_size) return null;
 
         const command_offset = header.header_len;
@@ -631,7 +631,7 @@ pub const Host = struct {
 
         if ((header.flags & constants.header_flag_compressed) != 0) {
             working_datagram = try self.decompressDatagram(working_datagram, header, &scratch);
-            header = try wire.parseHeader(working_datagram, self.config.protocol_flavor, self.config.checksum_fn != null);
+            header = try wire.parseHeader(working_datagram, self.config.using_new_packet_for_server, self.config.checksum_fn != null);
         }
         peer.last_receive_time = self.service_time;
         peer.incoming_data_total +%= @intCast(working_datagram.len);
@@ -724,7 +724,7 @@ pub const Host = struct {
     }
 
     fn validateGrowtopiaIntegrity(self: *Host, peer: *Peer, header: wire.HeaderView) bool {
-        if (self.config.protocol_flavor != .growtopia_server) return true;
+        if (!self.config.using_new_packet_for_server) return true;
         if (peer.state == .connected) return true;
         const integrity = header.integrity orelse return true;
         const port = if (self.config.address) |address| address.port else 0;
@@ -1719,7 +1719,7 @@ test "compressed and checksummed payload round trips" {
 
     const sent = sender_mock.popSent().?;
     defer std.testing.allocator.free(sent.bytes);
-    const header = try wire.parseHeader(sent.bytes, sender.config.protocol_flavor, true);
+    const header = try wire.parseHeader(sent.bytes, sender.config.using_new_packet, true);
     try std.testing.expect((header.flags & constants.header_flag_compressed) != 0);
 
     try receiver_mock.inject(sender_address, sent.bytes);

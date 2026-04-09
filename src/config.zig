@@ -2,12 +2,6 @@ const Address = @import("address.zig").Address;
 const checksum = @import("checksum.zig");
 const constants = @import("constants.zig");
 
-pub const ProtocolFlavor = enum {
-    vanilla,
-    growtopia_client,
-    growtopia_server,
-};
-
 pub const CompressionCallbacks = struct {
     context: ?*anyopaque = null,
     compress: ?*const fn (context: ?*anyopaque, input: []const checksum.Buffer, input_limit: usize, output: []u8) anyerror!usize = null,
@@ -30,7 +24,8 @@ pub const HostConfig = struct {
     mtu: u32 = constants.host_default_mtu,
     maximum_packet_size: usize = constants.host_default_maximum_packet_size,
     maximum_waiting_data: usize = constants.host_default_maximum_waiting_data,
-    protocol_flavor: ProtocolFlavor = .growtopia_server,
+    using_new_packet: bool = false,
+    using_new_packet_for_server: bool = false,
     checksum_fn: ?ChecksumFn = null,
     compression: CompressionCallbacks = .{},
 };

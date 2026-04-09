@@ -10,7 +10,8 @@ pub fn main() !void {
     var host = try zigenet.Host.withTransport(std.heap.page_allocator, .{
         .peer_limit = 1,
         .channel_limit = 2,
-        .protocol_flavor = .vanilla,
+        .using_new_packet = false,
+        .using_new_packet_for_server = false,
     }, transport);
     defer host.deinit();
 

@@ -8,7 +8,6 @@ pub const Peer = @import("host.zig").Peer;
 pub const Event = @import("host.zig").Event;
 pub const HostConfig = @import("config.zig").HostConfig;
 pub const Packet = @import("packet.zig").Packet;
-pub const ProtocolFlavor = @import("config.zig").ProtocolFlavor;
 pub const checksum = @import("checksum.zig");
 pub const compat = @import("compat.zig");
 pub const constants = @import("constants.zig");

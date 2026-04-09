@@ -19,7 +19,7 @@ Zig
 Design direction:
 - keep the public API Zig-native
 - preserve ENet-style protocol behavior where it matters
-- support Growtopia-specific wire behavior as a first-class protocol flavor
+- support Growtopia-specific wire behavior through explicit new-packet flags
 - favor testable protocol logic over platform-coupled design
 
 
@@ -40,7 +40,7 @@ The project supports:
 - optional checksum support
 - optional compression support
 - Unix and Windows UDP backends
-- Growtopia-oriented protocol flavor behavior
+- Growtopia-oriented new-packet behavior
 
 
 3. Core Mental Model
@@ -48,7 +48,7 @@ The project supports:
 Think about the library in layers:
 
 - config layer
-  host settings, protocol flavor, checksum callback, compression callbacks
+  host settings, new-packet flags, checksum callback, compression callbacks
 
 - wire layer
   header layout, command encoding, command sizes, checksum field placement
@@ -73,7 +73,7 @@ If you need a quick map, start here:
   public exports for the package
 
 - src/config.zig
-  host configuration, protocol flavors, checksum and compression hooks
+  host configuration, new-packet flags, checksum and compression hooks
 
 - src/host.zig
   the main engine: host lifecycle, peer lifecycle, event loop, send path, receive path
@@ -122,7 +122,6 @@ Main exported symbols from src/root.zig:
 - Event
 - HostConfig
 - Packet
-- ProtocolFlavor
 - checksum
 - compat
 - constants
@@ -147,15 +146,10 @@ HostConfig
   - mtu
   - maximum_packet_size
   - maximum_waiting_data
-  - protocol_flavor
+  - using_new_packet
+  - using_new_packet_for_server
   - checksum_fn
   - compression
-
-ProtocolFlavor
-- enum:
-  - vanilla
-  - growtopia_client
-  - growtopia_server
 
 Host
 - main owner of peers, queues, events, and service loop
@@ -237,28 +231,24 @@ These are useful when answering questions or changing code:
 - packet size must not exceed HostConfig.maximum_packet_size
 - checksum behavior depends on HostConfig.checksum_fn
 - compression behavior depends on HostConfig.compression callbacks
-- Growtopia integrity validation only matters in growtopia_server flavor
+- Growtopia integrity validation only matters when using_new_packet_for_server is enabled
 - Host.flush sends acknowledgements, resends, then queued commands
 - Host.service may return one immediate event and may also enqueue later events internally
 - wire size questions should use src/wire.zig helpers, not raw @sizeOf assumptions
 - Packet.release may destroy the packet immediately when reference_count reaches zero
 
 
-10. Protocol Flavor Notes
+10. New Packet Flag Notes
 
-vanilla
-- easiest mode for local smoke testing
-- used by current example binaries
-- plain ENet-style behavior without Growtopia-specific integrity requirements
+using_new_packet
+- enables outgoing new-packet header behavior
+- affects outgoing header encoding and fragment sizing
+- use when this host should send the newer packet format
 
-growtopia_client
-- reserved for client-oriented Growtopia workflows
-- use when you want client-side flavor-specific behavior
-
-growtopia_server
-- default in HostConfig
-- uses the Growtopia-style server header and integrity validation path
-- receive-side integrity checks are enforced in host parsing logic
+using_new_packet_for_server
+- enables incoming server-side new-packet parsing
+- enables Growtopia integrity validation on receive
+- use when this host should accept the server-side Growtopia packet layout
 
 
 11. Common Questions and Where To Look
@@ -289,7 +279,7 @@ If asked "how does compression work?":
 - read src/compression.zig for the implementation
 
 If asked "what is Growtopia-specific here?":
-- read ProtocolFlavor in src/config.zig
+- read the new-packet flags in src/config.zig
 - read outgoingIntegrity and validateGrowtopiaIntegrity in src/host.zig
 - read header logic in src/wire.zig
 
@@ -319,7 +309,8 @@ pub fn main() !void {
         .address = bind_address,
         .peer_limit = 32,
         .channel_limit = 2,
-        .protocol_flavor = .vanilla,
+        .using_new_packet = false,
+        .using_new_packet_for_server = false,
     }, transport);
     defer host.deinit();
 
@@ -358,7 +349,8 @@ pub fn main() !void {
     var host = try zigenet.Host.withTransport(std.heap.page_allocator, .{
         .peer_limit = 1,
         .channel_limit = 2,
-        .protocol_flavor = .vanilla,
+        .using_new_packet = false,
+        .using_new_packet_for_server = false,
     }, transport);
     defer host.deinit();
 
@@ -426,7 +418,8 @@ Important:
 var host = try zigenet.Host.withTransport(allocator, .{
     .peer_limit = 32,
     .channel_limit = 2,
-    .protocol_flavor = .growtopia_server,
+    .using_new_packet = true,
+    .using_new_packet_for_server = true,
     .checksum_fn = zigenet.checksum.crc32Buffers,
     .compression = my_callbacks,
 }, transport);
@@ -522,7 +515,7 @@ Examples:
 
 When answering questions:
 - prefer facts from the current Zig source over assumptions from original ENet
-- mention ProtocolFlavor when behavior differs between vanilla and Growtopia paths
+- mention the new-packet flags when behavior differs between ordinary and Growtopia-oriented paths
 - mention packet ownership rules when discussing Packet or Event.packet
 - mention src/wire.zig when the user asks about exact bytes, sizes, headers, or protocol layout
 - mention src/host.zig when the user asks about service loop, resend, ack, throttle, handshake, or dispatch
@@ -536,7 +529,7 @@ When making changes:
 
 When debugging:
 - decide whether the problem is in transport, wire parsing, protocol state, or event dispatch
-- check ProtocolFlavor first if the symptom only appears in Growtopia mode
+- check the new-packet flags first if the symptom only appears in Growtopia mode
 - check checksum and compression hooks if received packets are rejected
 
 

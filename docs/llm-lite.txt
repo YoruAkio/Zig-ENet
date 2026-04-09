@@ -31,7 +31,6 @@ Main public items:
 - Event
 - Packet
 - HostConfig
-- ProtocolFlavor
 - constants
 - protocol
 - transport
@@ -47,7 +46,7 @@ Main public items:
   package exports
 
 - src/config.zig
-  HostConfig, ProtocolFlavor, checksum/compression hooks
+  HostConfig, new-packet flags, checksum/compression hooks
 
 - src/host.zig
   main runtime engine, event loop, send/receive logic, reliability, handshake
@@ -118,17 +117,16 @@ Important:
 Do not describe packet ownership loosely.
 
 
-7. Protocol Flavors
+7. New Packet Flags
 
 Defined in src/config.zig:
-- vanilla
-- growtopia_client
-- growtopia_server
+- using_new_packet
+- using_new_packet_for_server
 
 Notes:
-- HostConfig defaults to growtopia_server
-- examples currently use vanilla for easier local testing
-- Growtopia-specific integrity behavior matters in growtopia_server mode
+- examples currently leave both flags disabled for easier local testing
+- using_new_packet affects outgoing new-header behavior
+- using_new_packet_for_server affects incoming server-side parsing and integrity checks
 
 
 8. Important Invariants
@@ -181,7 +179,8 @@ const transport = try zigenet.transport.unix.UdpSocket.bind(allocator, null);
 var host = try zigenet.Host.withTransport(allocator, .{
     .peer_limit = 1,
     .channel_limit = 2,
-    .protocol_flavor = .vanilla,
+    .using_new_packet = false,
+    .using_new_packet_for_server = false,
 }, transport);
 defer host.deinit();
 
@@ -206,7 +205,7 @@ while (true) {
 11. Guidance For LLMs
 
 - prefer current Zig source over assumptions from original ENet
-- mention ProtocolFlavor when behavior differs between vanilla and Growtopia paths
+- mention the new-packet flags when behavior differs between ordinary and Growtopia-oriented paths
 - mention packet ownership when discussing Packet or Event.packet
 - use src/wire.zig for exact bytes, header shape, and sizes
 - use src/host.zig for handshake, reliability, resend, throttle, and dispatch behavior

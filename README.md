@@ -14,7 +14,7 @@ This project ports the core ENet-style runtime to Zig and keeps the public surfa
 - Optional checksum support
 - Zig-native range coder compression
 - Unix and Windows transport backends
-- Growtopia-style header flavor support
+- Growtopia-style new-packet header support
 
 ## Build
 
@@ -73,7 +73,7 @@ Main Zig-facing types:
 - `Packet`
 - `Event`
 - `Address`
-- `ProtocolFlavor`
+- `HostConfig`
 
 ## License
 

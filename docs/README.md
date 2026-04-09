@@ -11,7 +11,7 @@ This folder contains project documentation for the Zig ENet rewrite used mainly 
 - [API Reference](api.md)
   Main public types and functions
 - [Growtopia Notes](growtopia.md)
-  Protocol flavor behavior and Growtopia-specific details
+  New-packet behavior and Growtopia-specific details
 
 ## Scope
 

@@ -12,7 +12,6 @@ Main exports:
 - `Event`
 - `Packet`
 - `HostConfig`
-- `ProtocolFlavor`
 - `transport`
 - `protocol`
 - `wire`
@@ -121,7 +120,8 @@ Important fields:
 - `mtu`
 - `maximum_packet_size`
 - `maximum_waiting_data`
-- `protocol_flavor`
+- `using_new_packet`
+- `using_new_packet_for_server`
 - `checksum_fn`
 - `compression`
 

@@ -12,7 +12,8 @@ pub fn main() !void {
         .address = bind_address,
         .peer_limit = 32,
         .channel_limit = 2,
-        .protocol_flavor = .vanilla,
+        .using_new_packet = false,
+        .using_new_packet_for_server = false,
     }, transport);
     defer host.deinit();
 

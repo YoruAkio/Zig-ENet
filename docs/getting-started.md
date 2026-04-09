@@ -86,7 +86,8 @@ pub fn main() !void {
     var host = try zigenet.Host.withTransport(std.heap.page_allocator, .{
         .peer_limit = 1,
         .channel_limit = 2,
-        .protocol_flavor = .vanilla,
+        .using_new_packet = false,
+        .using_new_packet_for_server = false,
     }, transport);
     defer host.deinit();
 
@@ -96,17 +97,15 @@ pub fn main() !void {
 }
 ```
 
-## Choosing A Protocol Flavor
+## Choosing New Packet Flags
 
-The main protocol flavors are:
+The main compatibility flags are:
 
-- `.vanilla`
-  plain ENet-style header behavior
-- `.growtopia_client`
-  reserved for Growtopia-oriented workflows
-- `.growtopia_server`
-  includes the Growtopia-style server header and integrity checks
+- `using_new_packet`
+  enables outgoing new-packet header behavior
+- `using_new_packet_for_server`
+  enables incoming server-side new-packet parsing and integrity checks
 
-For general local testing and simple examples, use `.vanilla`.
+For general local testing and simple examples, leave both flags `false`.
 
-For Growtopia private server work, use `.growtopia_server` when you need the custom header behavior.
+For Growtopia private server work, enable `using_new_packet_for_server` when you need the custom header behavior.

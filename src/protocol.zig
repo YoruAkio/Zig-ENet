@@ -1,6 +1,5 @@
 const std = @import("std");
 const constants = @import("constants.zig");
-const ProtocolFlavor = @import("config.zig").ProtocolFlavor;
 const Packet = @import("packet.zig").Packet;
 
 pub const OutgoingCommand = struct {
@@ -163,11 +162,8 @@ pub fn defaultWindowSize(outgoing_bandwidth: u32) u32 {
     return std.math.clamp(candidate, constants.protocol_minimum_window_size, constants.protocol_maximum_window_size);
 }
 
-pub fn fragmentLength(mtu: u32, checksum_enabled: bool, flavor: ProtocolFlavor) usize {
-    const header: usize = switch (flavor) {
-        .growtopia_server => @import("wire.zig").new_protocol_header_size,
-        else => @import("wire.zig").protocol_header_size,
-    };
+pub fn fragmentLength(mtu: u32, checksum_enabled: bool, using_new_packet: bool) usize {
+    const header: usize = if (using_new_packet) @import("wire.zig").new_protocol_header_size else @import("wire.zig").protocol_header_size;
     var length: usize = @intCast(mtu);
     length -= header + @import("wire.zig").protocol_send_fragment_size;
     if (checksum_enabled) length -= @sizeOf(u32);
@@ -189,8 +185,8 @@ pub fn throttle(current: u32, limit: u32, acceleration: u32, deceleration: u32, 
     return 0;
 }
 
-pub fn planFragments(allocator: std.mem.Allocator, packet: *Packet, mtu: u32, checksum_enabled: bool, flavor: ProtocolFlavor, unreliable_sequence_number: u16, reliable_sequence_number: u16) ![]Fragment {
-    const max_fragment = fragmentLength(mtu, checksum_enabled, flavor);
+pub fn planFragments(allocator: std.mem.Allocator, packet: *Packet, mtu: u32, checksum_enabled: bool, using_new_packet: bool, unreliable_sequence_number: u16, reliable_sequence_number: u16) ![]Fragment {
+    const max_fragment = fragmentLength(mtu, checksum_enabled, using_new_packet);
     if (packet.data.len <= max_fragment) return allocator.alloc(Fragment, 0);
 
     const fragment_count: u32 = @intCast((packet.data.len + max_fragment - 1) / max_fragment);
@@ -265,7 +261,7 @@ test "fragment planning matches packet length" {
     defer packet.release();
     packet.retain();
 
-    const fragments = try planFragments(std.testing.allocator, packet, constants.host_default_mtu, false, .vanilla, 0, 1);
+    const fragments = try planFragments(std.testing.allocator, packet, constants.host_default_mtu, false, false, 0, 1);
     defer std.testing.allocator.free(fragments);
 
     try std.testing.expect(fragments.len > 1);

@@ -1,7 +1,6 @@
 const std = @import("std");
 const constants = @import("constants.zig");
 const endian = @import("endian.zig");
-const ProtocolFlavor = @import("config.zig").ProtocolFlavor;
 
 pub const ProtocolHeader = packed struct {
     peer_id: u16,
@@ -159,21 +158,21 @@ pub fn commandSize(command: constants.ProtocolCommand) usize {
     };
 }
 
-pub fn headerPrefixLen(flavor: ProtocolFlavor, has_sent_time: bool) usize {
-    return switch (flavor) {
-        .growtopia_server => if (has_sent_time) new_protocol_header_size else 8,
-        else => if (has_sent_time) protocol_header_size else 2,
-    };
+pub fn headerPrefixLen(using_new_packet: bool, has_sent_time: bool) usize {
+    if (using_new_packet) {
+        return if (has_sent_time) new_protocol_header_size else 8;
+    }
+    return if (has_sent_time) protocol_header_size else 2;
 }
 
-pub fn headerLen(flavor: ProtocolFlavor, flags: u16, checksum_enabled: bool) usize {
-    return headerPrefixLen(flavor, (flags & constants.header_flag_sent_time) != 0) + @as(usize, if (checksum_enabled) @sizeOf(u32) else 0);
+pub fn headerLen(using_new_packet: bool, flags: u16, checksum_enabled: bool) usize {
+    return headerPrefixLen(using_new_packet, (flags & constants.header_flag_sent_time) != 0) + @as(usize, if (checksum_enabled) @sizeOf(u32) else 0);
 }
 
-pub fn encodeHeader(out: []u8, flavor: ProtocolFlavor, header: HeaderEncode, checksum_enabled: bool) !usize {
+pub fn encodeHeader(out: []u8, using_new_packet: bool, header: HeaderEncode, checksum_enabled: bool) !usize {
     const encoded_flags = header.flags & constants.header_flag_mask;
     const has_sent_time = header.sent_time != null;
-    const len = headerLen(flavor, encoded_flags | if (has_sent_time) constants.header_flag_sent_time else 0, checksum_enabled);
+    const len = headerLen(using_new_packet, encoded_flags | if (has_sent_time) constants.header_flag_sent_time else 0, checksum_enabled);
     if (out.len < len) return error.BufferTooSmall;
 
     @memset(out[0..len], 0);
@@ -183,56 +182,49 @@ pub fn encodeHeader(out: []u8, flavor: ProtocolFlavor, header: HeaderEncode, che
         encoded_flags |
         if (has_sent_time) constants.header_flag_sent_time else 0;
 
-    switch (flavor) {
-        .growtopia_server => {
-            const integrity = header.integrity orelse [_]u16{ 0, 0, 0 };
-            endian.writeU16(out[0..2], integrity[0]);
-            endian.writeU16(out[2..4], integrity[1]);
-            endian.writeU16(out[4..6], integrity[2]);
-            endian.writeU16(out[6..8], packed_peer_id);
-            if (header.sent_time) |sent_time| endian.writeU16(out[8..10], sent_time);
-        },
-        else => {
-            endian.writeU16(out[0..2], packed_peer_id);
-            if (header.sent_time) |sent_time| endian.writeU16(out[2..4], sent_time);
-        },
+    if (using_new_packet) {
+        const integrity = header.integrity orelse [_]u16{ 0, 0, 0 };
+        endian.writeU16(out[0..2], integrity[0]);
+        endian.writeU16(out[2..4], integrity[1]);
+        endian.writeU16(out[4..6], integrity[2]);
+        endian.writeU16(out[6..8], packed_peer_id);
+        if (header.sent_time) |sent_time| endian.writeU16(out[8..10], sent_time);
+    } else {
+        endian.writeU16(out[0..2], packed_peer_id);
+        if (header.sent_time) |sent_time| endian.writeU16(out[2..4], sent_time);
     }
 
     return len;
 }
 
-pub fn parseHeader(bytes: []const u8, flavor: ProtocolFlavor, checksum_enabled: bool) !HeaderView {
-    const min_len = headerPrefixLen(flavor, false) + @as(usize, if (checksum_enabled) @sizeOf(u32) else 0);
+pub fn parseHeader(bytes: []const u8, using_new_packet_for_server: bool, checksum_enabled: bool) !HeaderView {
+    const min_len = headerPrefixLen(using_new_packet_for_server, false) + @as(usize, if (checksum_enabled) @sizeOf(u32) else 0);
     if (bytes.len < min_len) return error.ShortHeader;
 
     var raw_peer_id: u16 = undefined;
     var integrity: ?[3]u16 = null;
 
-    switch (flavor) {
-        .growtopia_server => {
-            if (bytes.len < 8) return error.ShortHeader;
-            raw_peer_id = endian.readU16(bytes[6..8]);
-            integrity = .{
-                endian.readU16(bytes[0..2]),
-                endian.readU16(bytes[2..4]),
-                endian.readU16(bytes[4..6]),
-            };
-        },
-        else => raw_peer_id = endian.readU16(bytes[0..2]),
+    if (using_new_packet_for_server) {
+        if (bytes.len < 8) return error.ShortHeader;
+        raw_peer_id = endian.readU16(bytes[6..8]);
+        integrity = .{
+            endian.readU16(bytes[0..2]),
+            endian.readU16(bytes[2..4]),
+            endian.readU16(bytes[4..6]),
+        };
+    } else {
+        raw_peer_id = endian.readU16(bytes[0..2]);
     }
 
     const flags = raw_peer_id & constants.header_flag_mask;
     const session_id: u8 = @intCast((raw_peer_id & constants.header_session_mask) >> constants.header_session_shift);
     const peer_id = raw_peer_id & ~(constants.header_flag_mask | constants.header_session_mask);
-    const len = headerLen(flavor, flags, checksum_enabled);
+    const len = headerLen(using_new_packet_for_server, flags, checksum_enabled);
     if (bytes.len < len) return error.ShortHeader;
 
     var sent_time: ?u16 = null;
     if ((flags & constants.header_flag_sent_time) != 0) {
-        sent_time = switch (flavor) {
-            .growtopia_server => endian.readU16(bytes[8..10]),
-            else => endian.readU16(bytes[2..4]),
-        };
+        sent_time = if (using_new_packet_for_server) endian.readU16(bytes[8..10]) else endian.readU16(bytes[2..4]);
     }
 
     return .{
@@ -270,9 +262,9 @@ test "command sizes match current enet layout" {
     try std.testing.expectEqual(@as(usize, 24), commandSize(.send_fragment));
 }
 
-test "vanilla header round trips" {
+test "legacy header round trips" {
     var buf: [8]u8 = undefined;
-    const len = try encodeHeader(&buf, .vanilla, .{
+    const len = try encodeHeader(&buf, false, .{
         .peer_id = 7,
         .session_id = 2,
         .flags = constants.header_flag_compressed,
@@ -280,16 +272,16 @@ test "vanilla header round trips" {
     }, true);
     try std.testing.expectEqual(@as(usize, 8), len);
 
-    const parsed = try parseHeader(buf[0..len], .vanilla, true);
+    const parsed = try parseHeader(buf[0..len], false, true);
     try std.testing.expectEqual(@as(u16, 7), parsed.peer_id);
     try std.testing.expectEqual(@as(u8, 2), parsed.session_id);
     try std.testing.expectEqual(@as(u16, constants.header_flag_compressed | constants.header_flag_sent_time), parsed.flags);
     try std.testing.expectEqual(@as(?u16, 1234), parsed.sent_time);
 }
 
-test "growtopia server header round trips" {
+test "new packet header round trips" {
     var buf: [16]u8 = undefined;
-    const len = try encodeHeader(&buf, .growtopia_server, .{
+    const len = try encodeHeader(&buf, true, .{
         .peer_id = 10,
         .session_id = 1,
         .sent_time = 99,
@@ -297,7 +289,7 @@ test "growtopia server header round trips" {
     }, false);
     try std.testing.expectEqual(@as(usize, 10), len);
 
-    const parsed = try parseHeader(buf[0..len], .growtopia_server, false);
+    const parsed = try parseHeader(buf[0..len], true, false);
     try std.testing.expectEqual(@as(u16, 10), parsed.peer_id);
     try std.testing.expectEqual(@as(u8, 1), parsed.session_id);
     try std.testing.expectEqual(@as(?u16, 99), parsed.sent_time);
